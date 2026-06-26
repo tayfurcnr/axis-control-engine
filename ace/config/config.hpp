@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "ace/communication/command_ids.hpp"
+#include "ace/config/device_config.hpp"
 
 namespace ace::config {
 
@@ -56,16 +57,25 @@ struct PersistentConfig {
     double location_latitude_deg = 0.0;
     double location_altitude_m = 0.0;
     ace::communication::ModeId startup_mode = ace::communication::ModeId::MANUAL;
-    AxisLimitConfig pan_angle_limit {-180.0f, 180.0f};
-    AxisLimitConfig tilt_angle_limit {-90.0f, 90.0f};
-    AxisVelocityLimitConfig pan_velocity_limit {-60.0f, 60.0f};
-    AxisVelocityLimitConfig tilt_velocity_limit {-60.0f, 60.0f};
-    GeoLimitConfig longitude_limit {-180.0, 180.0};
-    GeoLimitConfig latitude_limit {-90.0, 90.0};
-    GeoLimitConfig altitude_limit {-500.0, 9000.0};
-    GeoLimitConfig target_longitude_limit {-180.0, 180.0};
-    GeoLimitConfig target_latitude_limit {-90.0, 90.0};
-    GeoLimitConfig target_altitude_limit {-500.0, 9000.0};
+
+    // Soft limits: operator tarafindan komutla guncellenebilir. Fabrika varsayilanlari device_config'den gelir.
+    // Hard limits ise hic bir zaman asil amaz (donanim fiziginini temsil eder).
+    AxisLimitConfig pan_angle_limit  {
+        ace::config::device::kPanHardMinDeg,
+        ace::config::device::kPanHardMaxDeg
+    };
+    AxisLimitConfig tilt_angle_limit {
+        ace::config::device::kTiltHardMinDeg,
+        ace::config::device::kTiltHardMaxDeg
+    };
+    AxisVelocityLimitConfig pan_velocity_limit  {-ace::config::device::kPanMaxVelocityDps,  ace::config::device::kPanMaxVelocityDps};
+    AxisVelocityLimitConfig tilt_velocity_limit {-ace::config::device::kTiltMaxVelocityDps, ace::config::device::kTiltMaxVelocityDps};
+    GeoLimitConfig longitude_limit {ace::config::device::kLongitudeMin, ace::config::device::kLongitudeMax};
+    GeoLimitConfig latitude_limit  {ace::config::device::kLatitudeMin,  ace::config::device::kLatitudeMax};
+    GeoLimitConfig altitude_limit  {ace::config::device::kAltitudeMin,  ace::config::device::kAltitudeMax};
+    GeoLimitConfig target_longitude_limit {ace::config::device::kLongitudeMin, ace::config::device::kLongitudeMax};
+    GeoLimitConfig target_latitude_limit  {ace::config::device::kLatitudeMin,  ace::config::device::kLatitudeMax};
+    GeoLimitConfig target_altitude_limit  {ace::config::device::kAltitudeMin,  ace::config::device::kAltitudeMax};
     float position_tolerance_deg = 0.25f;
     float velocity_tolerance_deg_s = 0.25f;
     double target_tolerance_m = 1.0;
@@ -76,8 +86,8 @@ struct PersistentConfig {
     AxisCalibrationConfig tilt_calibration {};
     PidConfig pan_pid {};
     PidConfig tilt_pid {};
-    MotionConfig pan_motion {};
-    MotionConfig tilt_motion {};
+    MotionConfig pan_motion  {ace::config::device::kPanMaxVelocityDps  / 2.0f, ace::config::device::kPanMaxAccelDps2  / 2.0f};
+    MotionConfig tilt_motion {ace::config::device::kTiltMaxVelocityDps / 2.0f, ace::config::device::kTiltMaxAccelDps2 / 2.0f};
 };
 
 }  // namespace ace::config

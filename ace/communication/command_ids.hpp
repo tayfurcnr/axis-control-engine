@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 namespace ace::communication {
 
@@ -21,6 +22,7 @@ enum class CommandId : std::uint8_t {
     HEARTBEAT = 0x50,
     SET_LOCATION = 0x60,
     SET_DEBUG = 0x61,
+    SET_SERIAL = 0x62,
     ERROR = 0x70,
     GET_INFO = 0x80,
     REBOOT = 0x90,

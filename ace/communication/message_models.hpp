@@ -98,6 +98,7 @@ struct CommandRequest {
     double latitude_deg = 0.0;
     double altitude_m = 0.0;
     bool debug_enabled = false;
+    char serial_number[32] = {};
 };
 
 struct CommandOutcome {

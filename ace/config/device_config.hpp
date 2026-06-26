@@ -82,4 +82,12 @@ static constexpr float kTelemetryPeriodS   = 0.020f;  // 20 ms / 50 Hz
 
 static constexpr const char* kFeatures = "PAN,TILT,LOCATION,TARGET,TELEMETRY,PID,MOTION_LIMITS";
 
+// -----------------------------------------------------------------------------
+// Serial Number Default
+// Her cihaza sahada SET_SERIAL komutu ile benzersiz bir seri no yazilir.
+// NVS bos ise bu varsayilan deger kullanilir.
+// -----------------------------------------------------------------------------
+
+static constexpr const char* kDefaultSerialNumber = "SN-0000";
+
 }  // namespace ace::config::device

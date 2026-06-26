@@ -53,6 +53,9 @@ struct PersistentConfig {
 
     std::uint32_t version = kVersion;
     bool has_location = false;
+    // Cihaza ozgu benzersiz seri numarasi. FACTORY_RESET tarafindan SILINMEZ.
+    // Sahada SET_SERIAL komutu ile yazilir.
+    char serial_number[32] = {};
     double location_longitude_deg = 0.0;
     double location_latitude_deg = 0.0;
     double location_altitude_m = 0.0;

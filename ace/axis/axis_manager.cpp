@@ -2,6 +2,7 @@
 #include "ace/config/device_config.hpp"
 #define _USE_MATH_DEFINES
 #include <cmath>
+#include <cstring>
 
 namespace ace::axis {
 
@@ -547,6 +548,19 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         outcome.ack = ace::communication::AckResponse{request.command_id};
         log_debug("axis.execute", request.debug_enabled ? "SET_DEBUG ile debug açıldı." : "SET_DEBUG ile debug kapatıldı.");
         return outcome;
+    case ace::communication::CommandId::SET_SERIAL: {
+        if (persistent_config_ == nullptr || persistent_storage_ == nullptr) {
+            outcome.nack = ace::communication::NackResponse{request.command_id, make_storage_not_initialized_error()};
+            return outcome;
+        }
+        // Seri numarasini NVS'e kaydet. FACTORY_RESET bu alani sifirlamaz.
+        std::strncpy(persistent_config_->serial_number, request.serial_number, sizeof(persistent_config_->serial_number) - 1);
+        persistent_config_->serial_number[sizeof(persistent_config_->serial_number) - 1] = '\0';
+        persistent_storage_->save(*persistent_config_);
+        outcome.ack = ace::communication::AckResponse{request.command_id};
+        log_debug("axis.execute", "SET_SERIAL komutu işlendi.");
+        return outcome;
+    }
     case ace::communication::CommandId::SET_TARGET:
         if (!is_valid_target(config, request.longitude_deg, request.latitude_deg, request.altitude_m)) {
             make_limit_nack();
@@ -569,7 +583,14 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             outcome.nack = ace::communication::NackResponse{request.command_id, make_storage_write_error()};
             return outcome;
         }
-        *persistent_config_ = ace::config::PersistentConfig {};
+        {
+            // Seri numarasini FACTORY_RESET'ten koru: donanim kimligi, yazilim konfigurasyonu degil.
+            char preserved_serial[32] = {};
+            std::strncpy(preserved_serial, persistent_config_->serial_number, sizeof(preserved_serial) - 1);
+            *persistent_config_ = ace::config::PersistentConfig {};
+            std::strncpy(persistent_config_->serial_number, preserved_serial, sizeof(persistent_config_->serial_number) - 1);
+            persistent_storage_->save(*persistent_config_);
+        }
         pan_ = AxisStatus{ace::communication::AxisId::PAN};
         tilt_ = AxisStatus{ace::communication::AxisId::TILT};
         mode_ = ace::communication::ModeId::MANUAL;
@@ -582,7 +603,7 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         pending_event_.reset();
         pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
         outcome.ack = ace::communication::AckResponse{request.command_id};
-        log_debug("axis.execute", "FACTORY_RESET komutu işlendi.");
+        log_debug("axis.execute", "FACTORY_RESET komutu işlendi. Seri numara korundu.");
         return outcome;
     default:
         make_invalid_parameter_nack();

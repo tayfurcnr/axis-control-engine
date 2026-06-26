@@ -18,6 +18,22 @@ const ace::config::PersistentConfig& effective_config(const ace::config::Persist
     return config != nullptr ? *config : kDefaultConfig;
 }
 
+// SUMMARY: DONE: Komutun şu anki çalışma modunda çalıştırılabilir olup olmadığını kontrol eden Filtre/Capability Matrix'i.
+bool can_execute_in_mode(ace::communication::CommandId cmd, ace::communication::ModeId mode)
+{
+    switch (cmd) {
+    case ace::communication::CommandId::SET_ANGLE:
+    case ace::communication::CommandId::SET_VELOCITY:
+        return mode == ace::communication::ModeId::MANUAL;
+    
+    case ace::communication::CommandId::SET_TARGET:
+        return mode == ace::communication::ModeId::TRACK || mode == ace::communication::ModeId::AUTO;
+    
+    default:
+        return true; // ENABLE, DISABLE, SET_MODE, SET_PID gibi temel komutlar her modda serbest
+    }
+}
+
 // SUMMARY: DONE: Eksenin yeni hareket komutunu kabul edip edemeyeceğini kontrol eder.
 bool can_accept_motion(const AxisStatus& axis)
 {
@@ -325,6 +341,12 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
     const auto make_busy_nack = [&]() {
         outcome.nack = ace::communication::NackResponse{request.command_id, make_busy_error()};
     };
+
+    if (!can_execute_in_mode(request.command_id, mode_)) {
+        make_busy_nack(); // NACK (Mode Not Allowed)
+        log_debug("axis.execute", "Capability Matrix Uyarısı: Bu modda bu komuta izin verilmiyor.");
+        return outcome;
+    }
 
     switch (request.command_id) {
     case ace::communication::CommandId::ENABLE:

@@ -221,9 +221,22 @@ INFO DEVICE_NAME=ACE-PT-01 DEVICE_ID=0xACE1 FW_VERSION=1.0.0 PROTOCOL_VERSION=0.
 
 | Mode | ID | Meaning |
 | --- | --- | --- |
-| `MANUAL` | `0x01` | Doğrudan komutla sürüş modu |
-| `AUTO` | `0x02` | Dahili kontrol/planner modu |
-| `TRACK` | `0x03` | Hedef/ROI takip modu |
+| `MANUAL` | `0x01` | Doğrudan komutla (SET_ANGLE, SET_VELOCITY) yönlendirme modu |
+| `AUTO` | `0x02` | Dahili Planner tarafından çizilen rotada (Örn: 360 tarama alanı) sistemin çalıştırıldığı mod |
+| `TRACK` | `0x03` | Verilen coğrafi (Enlem, Boylam) kilitlenmiş hedefi takip etme modu |
+
+### Capability Matrix (Mode Based Access Control)
+
+Kullanıcının seçtiği aktif operasyonel mod (`ModeId`), sistemin dışarıdan kabul edebileceği hareket komutlarını doğrudan etkiler. Bu mantık, `TRACK` modunda hedefe kitlenmişken kullanıcının sehven göndereceği joystick/açı komutlarının takip algoritmasını bozmaması için tasarlanmıştır. Belirli modlarda belirli komutlar reddedilir (`NACK`).
+
+| Command | `MANUAL` Mod Gerekli Mi? | Desteklenen Modlar | Açıklama |
+| --- | --- | --- | --- |
+| `SET_ANGLE` | Evet | Yalnızca `MANUAL` | İstenilen doğrudan açıya gider. `TRACK`/`AUTO`'da `NACK` döner. |
+| `SET_VELOCITY` | Evet | Yalnızca `MANUAL` | İstenilen doğrudan hızda döner. `TRACK`/`AUTO`'da `NACK` döner. |
+| `SET_TARGET` | Hayır | `TRACK`, `AUTO` | Yalnızca hedefe bağlı modlarda coğrafi hedefler kabul edilir. |
+| `CALIBRATE`, `HOME` | İhtiyari | (Tümü) | Gelişmiş güvenlikte sadece MANUAL'e kilitlenebilir, şimdilik serbesttir. |
+| `ENABLE`, `STOP`, `SET_PID` vb. | Hayır | Tümü | Sistem yönetimi ve acil durum komutları HER modda daima çalışır. |
+
 
 ### Stop Type IDs
 

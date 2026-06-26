@@ -1,4 +1,5 @@
 #include "ace/axis/axis_manager.hpp"
+#include "ace/config/device_config.hpp"
 #define _USE_MATH_DEFINES
 #include <cmath>
 
@@ -199,16 +200,21 @@ bool is_valid_angle_request(const ace::config::PersistentConfig& config,
                             float pan_deg,
                             float tilt_deg)
 {
+    // Önce donanım fiziksel sınır (device_config) sonra yazılım soft limiti (PersistentConfig) kontrol edilir.
     if (axis == ace::communication::AxisId::PAN) {
-        return is_within_range(pan_deg, config.pan_angle_limit.min_deg, config.pan_angle_limit.max_deg);
+        return is_within_range(pan_deg, ace::config::device::kPanHardMinDeg, ace::config::device::kPanHardMaxDeg)
+            && is_within_range(pan_deg, config.pan_angle_limit.min_deg, config.pan_angle_limit.max_deg);
     }
 
     if (axis == ace::communication::AxisId::TILT) {
-        return is_within_range(tilt_deg, config.tilt_angle_limit.min_deg, config.tilt_angle_limit.max_deg);
+        return is_within_range(tilt_deg, ace::config::device::kTiltHardMinDeg, ace::config::device::kTiltHardMaxDeg)
+            && is_within_range(tilt_deg, config.tilt_angle_limit.min_deg, config.tilt_angle_limit.max_deg);
     }
 
     if (axis == ace::communication::AxisId::ALL) {
-        return is_within_range(pan_deg, config.pan_angle_limit.min_deg, config.pan_angle_limit.max_deg)
+        return is_within_range(pan_deg, ace::config::device::kPanHardMinDeg, ace::config::device::kPanHardMaxDeg)
+            && is_within_range(pan_deg, config.pan_angle_limit.min_deg, config.pan_angle_limit.max_deg)
+            && is_within_range(tilt_deg, ace::config::device::kTiltHardMinDeg, ace::config::device::kTiltHardMaxDeg)
             && is_within_range(tilt_deg, config.tilt_angle_limit.min_deg, config.tilt_angle_limit.max_deg);
     }
 

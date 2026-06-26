@@ -1,4 +1,6 @@
 #include "ace/axis/axis_manager.hpp"
+#define _USE_MATH_DEFINES
+#include <cmath>
 
 namespace ace::axis {
 
@@ -19,7 +21,11 @@ const ace::config::PersistentConfig& effective_config(const ace::config::Persist
 // SUMMARY: DONE: Eksenin yeni hareket komutunu kabul edip edemeyeceğini kontrol eder.
 bool can_accept_motion(const AxisStatus& axis)
 {
-    return axis.enabled && axis.state == AxisState::ready;
+    // Cihaz hazırsa veya hali hazırda bir hedefe/hıza doğru hareket ediyorsa (Tracking) dinamik güncellemeyi kabul eder.
+    return axis.enabled && (axis.state == AxisState::ready || 
+                            axis.state == AxisState::position || 
+                            axis.state == AxisState::velocity ||
+                            axis.state == AxisState::tracking);
 }
 
 constexpr double kEarthRadiusM = 6371000.0;
@@ -371,6 +377,10 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             return outcome;
         }
         if (pending_event_) {
+            make_busy_nack();
+            return outcome;
+        }
+        if (mode_ != ace::communication::ModeId::MANUAL) {
             make_busy_nack();
             return outcome;
         }

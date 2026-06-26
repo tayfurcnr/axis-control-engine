@@ -358,6 +358,10 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             make_busy_nack();
             return outcome;
         }
+        if (mode_ != ace::communication::ModeId::MANUAL) {
+            make_busy_nack();
+            return outcome;
+        }
         if (!can_accept_motion_for_axis(request.axis, pan_, tilt_)) {
             make_busy_nack();
             return outcome;

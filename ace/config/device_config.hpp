@@ -75,6 +75,9 @@ static constexpr double kAltitudeMax  = 9000.0;
 static constexpr float kControlLoopPeriodS = 0.001f;  // 1 ms / 1000 Hz
 static constexpr float kTelemetryPeriodS   = 0.020f;  // 20 ms / 50 Hz
 
+// Haberleşme kopukluğu (Timeout) tespiti için maksimum bekleme süresi
+static constexpr float kCommunicationTimeoutS = 2.0f;
+
 // -----------------------------------------------------------------------------
 // Telemetry Features String
 // GET_INFO cevabında FEATURES alanı olarak yayınlanır.

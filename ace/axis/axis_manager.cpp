@@ -337,6 +337,10 @@ void AxisManager::disable(ace::communication::AxisId axis)
 ace::communication::CommandOutcome AxisManager::execute(const ace::communication::CommandRequest& request)
 {
     ace::communication::CommandOutcome outcome {};
+    
+    // Geçerli bir GCS komutu alındığında timeout sayacını sıfırla (Heartbeat)
+    communication_timeout_timer_s_ = 0.0f;
+
     const auto& config = effective_config(persistent_config_);
 
     const auto make_invalid_parameter_nack = [&]() {
@@ -826,6 +830,21 @@ void AxisManager::update(float dt_s, const SensorData& sensors)
         pan_.state = AxisState::fault;
         tilt_.state = AxisState::fault;
         return;
+    }
+
+    // Haberleşme koptu mu kontrolü (Watchdog)
+    communication_timeout_timer_s_ += dt_s;
+    if (communication_timeout_timer_s_ > ace::config::device::kCommunicationTimeoutS) {
+        if (!safety_manager_.has_fault(ace::safety::FaultCode::COMMAND_TIMEOUT)) {
+            safety_manager_.report_fault(ace::safety::FaultCode::COMMAND_TIMEOUT);
+            stop(ace::communication::StopTypeId::SOFT);
+            log_debug("axis.update", "Haberleşme koptu! Motorlar SOFT-STOP ile durduruldu.");
+        }
+    } else {
+        if (safety_manager_.has_fault(ace::safety::FaultCode::COMMAND_TIMEOUT)) {
+            safety_manager_.clear_fault(ace::safety::FaultCode::COMMAND_TIMEOUT);
+            log_debug("axis.update", "Haberleşme geri geldi.");
+        }
     }
 
     // --- Konum Tahmini (Feature Flag'e göre otomatik seçilir) ---

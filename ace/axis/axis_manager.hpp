@@ -15,8 +15,11 @@ namespace ace::axis {
 struct SensorData {
     float pan_rate_dps = 0.0f;           // High freq velocity from Gyro or Stepper Pulses
     float tilt_rate_dps = 0.0f;          // High freq velocity from Gyro or Stepper Pulses
-    float compass_heading_deg = 0.0f;    // Absolute Low Freq Pan reference
-    float accel_tilt_deg = 0.0f;         // Absolute Low Freq Tilt reference
+    float compass_heading_deg = 0.0f;    // Absolute Low Freq Pan reference (Magnetometer)
+    float accel_tilt_deg = 0.0f;         // Absolute Low Freq Tilt reference (Accelerometer)
+    // --- kHasEncoder = true durumunda doldurulur ---
+    float encoder_pan_deg = 0.0f;        // Optik/Manyetik enkoder mutlak Pan açısı
+    float encoder_tilt_deg = 0.0f;       // Optik/Manyetik enkoder mutlak Tilt açısı
 };
 
 // Logical runtime state only. No hardware handles live here.

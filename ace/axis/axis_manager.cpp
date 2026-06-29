@@ -254,7 +254,9 @@ void mark_axis_motion_state(AxisStatus& axis, AxisState state)
 AxisManager::AxisManager(ace::services::Logger* logger)
     : pan_{ace::communication::AxisId::PAN},
       tilt_{ace::communication::AxisId::TILT},
-      logger_(logger)
+      logger_(logger),
+      pan_fusion_(ace::config::device::kFusionAlpha),
+      tilt_fusion_(ace::config::device::kFusionAlpha)
 {
     pan_planner_.set_limits(60.0f, 30.0f);
     tilt_planner_.set_limits(60.0f, 30.0f);
@@ -813,23 +815,30 @@ void AxisManager::update(float dt_s, const SensorData& sensors)
         return;
     }
 
-    // --- Sensör Füzyonu ---
-    // Pusula ve Jiro verilerini harmanla: Açık döngü sürüşte hız (rate) step
-    // komutlarından gelir. Pusula ise uzun vadeli kalibrasyonu/düzeltmeyi sağlar.
-    pan_.current_position_deg  = pan_fusion_.update(sensors.pan_rate_dps, sensors.compass_heading_deg, dt_s);
-    tilt_.current_position_deg = tilt_fusion_.update(sensors.tilt_rate_dps, sensors.accel_tilt_deg, dt_s);
+    // --- Konum Tahmini (Feature Flag'e göre otomatik seçilir) ---
+    if constexpr (ace::config::device::kHasEncoder) {
+        // Encoder varsa: Ham encoder açısı doğrudan kullanılır, füzyon bypass edilir.
+        // sensors.encoder_pan_deg ve sensors.encoder_tilt_deg HAL tarafından doldurulmalıdır.
+        pan_.current_position_deg  = sensors.encoder_pan_deg;
+        tilt_.current_position_deg = sensors.encoder_tilt_deg;
 
-    if (pan_.state == AxisState::boot) {
-        // İlk boot'ta Pusula ile pozisyon eşitlenir
-        pan_fusion_.reset(sensors.compass_heading_deg);
-        pan_.current_position_deg = sensors.compass_heading_deg;
-        pan_.state = AxisState::ready;
-    }
-
-    if (tilt_.state == AxisState::boot) {
-        tilt_fusion_.reset(sensors.accel_tilt_deg);
-        tilt_.current_position_deg = sensors.accel_tilt_deg;
-        tilt_.state = AxisState::ready;
+        if (pan_.state == AxisState::boot)  { pan_.state  = AxisState::ready; }
+        if (tilt_.state == AxisState::boot) { tilt_.state = AxisState::ready; }
+    } else {
+        // Encoder yok: Complementary Filter ile IMU füzyonu.
+        // Boot'ta pusula ile sıfır noktası tohumlanır (Homing by Compass).
+        if (pan_.state == AxisState::boot) {
+            pan_fusion_.reset(sensors.compass_heading_deg);
+            pan_.current_position_deg = sensors.compass_heading_deg;
+            pan_.state = AxisState::ready;
+        }
+        if (tilt_.state == AxisState::boot) {
+            tilt_fusion_.reset(sensors.accel_tilt_deg);
+            tilt_.current_position_deg = sensors.accel_tilt_deg;
+            tilt_.state = AxisState::ready;
+        }
+        pan_.current_position_deg  = pan_fusion_.update(sensors.pan_rate_dps, sensors.compass_heading_deg, dt_s);
+        tilt_.current_position_deg = tilt_fusion_.update(sensors.tilt_rate_dps, sensors.accel_tilt_deg, dt_s);
     }
 
     if (pan_.state == AxisState::position) {
@@ -874,9 +883,19 @@ void AxisManager::update(float dt_s, const SensorData& sensors)
     }
 
     if (pan_.state == AxisState::homing) {
-        pan_.current_position_deg = 0.0f;
+        if constexpr (ace::config::device::kHasLimitSwitch) {
+            // Limit switch varsa: Motor yavaşça geri döner, switch tetiklenince sıfırlanır.
+            // HAL entegrasyonunda limit_switch_->is_min_triggered() ile kontrol edilecek.
+            // Şimdilik tek tick'te tamamlanıyor (HAL stub).
+            pan_fusion_.reset(0.0f);
+            pan_.current_position_deg = 0.0f;
+        } else {
+            // Limit switch yok: IMU pusulasıyla anlık sıfırla (Compass Homing).
+            pan_fusion_.reset(sensors.compass_heading_deg);
+            pan_.current_position_deg = sensors.compass_heading_deg;
+        }
         pan_.current_velocity_dps = 0.0f;
-        pan_.target_velocity_dps = 0.0f;
+        pan_.target_velocity_dps  = 0.0f;
         pan_.state = AxisState::ready;
         if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
             pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,
@@ -886,9 +905,17 @@ void AxisManager::update(float dt_s, const SensorData& sensors)
     }
 
     if (tilt_.state == AxisState::homing) {
-        tilt_.current_position_deg = 0.0f;
+        if constexpr (ace::config::device::kHasLimitSwitch) {
+            // Limit switch varsa: Motor yavaşça geri döner, switch tetiklenince sıfırlanır.
+            tilt_fusion_.reset(0.0f);
+            tilt_.current_position_deg = 0.0f;
+        } else {
+            // Limit switch yok: İvmeölçer (Accel) ile anlık mevcut tilt açısında sıfırla.
+            tilt_fusion_.reset(sensors.accel_tilt_deg);
+            tilt_.current_position_deg = sensors.accel_tilt_deg;
+        }
         tilt_.current_velocity_dps = 0.0f;
-        tilt_.target_velocity_dps = 0.0f;
+        tilt_.target_velocity_dps  = 0.0f;
         tilt_.state = AxisState::ready;
         if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
             pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,

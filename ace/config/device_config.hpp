@@ -90,4 +90,33 @@ static constexpr const char* kFeatures = "PAN,TILT,LOCATION,TARGET,TELEMETRY,PID
 
 static constexpr const char* kDefaultSerialNumber = "SN-0000";
 
+// -----------------------------------------------------------------------------
+// Hardware Feature Flags
+// =============================================================================
+// Bu flaglar donanım yapılandırmasını derleme zamanında belirler.
+// Bir donanım bileşeni eklendiğinde sadece ilgili flag'i true yapın ve
+// firmware'i yeniden derleyin. AxisManager otomatik doğru yolu seçer.
+//
+// KULLANIM:
+//   kHasImu         = true   → IMU üzerinden Compass + Accel + Gyro okunur.
+//                              Tilt için ivmeölçer, Pan için pusula kullanılır.
+//
+//   kHasEncoder     = true   → Optik/Manyetik encoder verisi doğrudan
+//                              current_position_deg olarak kullanılır.
+//                              ComplementaryFilter bypass edilir.
+//
+//   kHasLimitSwitch = true   → HOME/CALIBRATE komutunda motor yavaşça limit
+//                              switch'e kadar çevrilir, orada sıfırlanır.
+//                              false iken IMU pusula seed'iyle anında sıfırlanır.
+// -----------------------------------------------------------------------------
+
+static constexpr bool kHasImu          = true;   // Minimum donanım — her zaman true
+static constexpr bool kHasEncoder      = false;  // Optik/Manyetik enkoder var mı?
+static constexpr bool kHasLimitSwitch  = false;  // Limit switch var mı?
+
+// Complementary Filter hassasiyeti (yalnızca kHasEncoder=false durumunda aktif)
+// Yüksek alpha → Gyro/Step'e yüksek güven, düşük drift düzeltme
+// Düşük alpha  → Pusula/Accel'e daha fazla güven, daha yavaş tepki
+static constexpr float kFusionAlpha = 0.98f;
+
 }  // namespace ace::config::device

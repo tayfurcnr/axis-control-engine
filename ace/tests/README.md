@@ -9,6 +9,7 @@ Proje kodunu ESP32 donanımına ihtiyaç duymadan standart `g++` ile PC'de doğr
 | Dosya | Test Edilen Modül | Senaryo |
 |---|---|---|
 | `test_axis_manager.cpp` | `ace/axis` | Durum makinası geçişleri, IMU boot homing doğruluğu |
+| `test_geometry.cpp` | `ace/geometry` | Coğrafi hedef projeksiyonu ve pan/tilt hesabı |
 | `test_sensor_fusion.cpp` | `ace/control` | ComplementaryFilter ilk değer, füzyon oranı, drift düzeltme |
 
 ---
@@ -24,10 +25,17 @@ g++ -std=c++17 \
   ace/axis/axis_manager.cpp \
   ace/control/controller.cpp \
   ace/control/sensor_fusion.cpp \
+  ace/geometry/target_geometry.cpp \
   ace/motion/motion_planner.cpp \
   ace/telemetry/telemetry_publisher.cpp \
   ace/services/logger.cpp \
   -I. -o /tmp/test_axis && /tmp/test_axis
+
+# Geometry testleri
+g++ -std=c++17 \
+  ace/tests/test_geometry.cpp \
+  ace/geometry/target_geometry.cpp \
+  -I. -o /tmp/test_geo && /tmp/test_geo
 
 # SensorFusion testleri
 g++ -std=c++17 \

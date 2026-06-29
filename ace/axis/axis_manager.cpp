@@ -1,5 +1,6 @@
 #include "ace/axis/axis_manager.hpp"
 #include "ace/config/device_config.hpp"
+#include "ace/geometry/target_geometry.hpp"
 #define _USE_MATH_DEFINES
 #include <cmath>
 #include <cstring>
@@ -46,41 +47,6 @@ bool can_accept_motion(const AxisStatus& axis)
                             axis.state == AxisState::tracking);
 }
 
-constexpr double kEarthRadiusM = 6371000.0;
-constexpr double kDegToRad = M_PI / 180.0;
-constexpr double kRadToDeg = 180.0 / M_PI;
-
-void calculate_target_angles(double lat1, double lon1, double alt1,
-                             double lat2, double lon2, double alt2,
-                             float& out_pan_deg, float& out_tilt_deg)
-{
-    double lat1_r = lat1 * kDegToRad;
-    double lon1_r = lon1 * kDegToRad;
-    double lat2_r = lat2 * kDegToRad;
-    double lon2_r = lon2 * kDegToRad;
-
-    double d_lat = lat2_r - lat1_r;
-    double d_lon = lon2_r - lon1_r;
-
-    // Bearing (Pan) - From North
-    double y = std::sin(d_lon) * std::cos(lat2_r);
-    double x = std::cos(lat1_r) * std::sin(lat2_r) - std::sin(lat1_r) * std::cos(lat2_r) * std::cos(d_lon);
-    double bearing_rad = std::atan2(y, x);
-    out_pan_deg = static_cast<float>(bearing_rad * kRadToDeg);
-
-    // Haversine distance
-    double a = std::sin(d_lat / 2.0) * std::sin(d_lat / 2.0) +
-               std::cos(lat1_r) * std::cos(lat2_r) *
-               std::sin(d_lon / 2.0) * std::sin(d_lon / 2.0);
-    double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
-    double distance_m = kEarthRadiusM * c;
-
-    // Elevation (Tilt)
-    double alt_diff = alt2 - alt1;
-    double elevation_rad = std::atan2(alt_diff, distance_m);
-    out_tilt_deg = static_cast<float>(elevation_rad * kRadToDeg);
-}
-
 // SUMMARY: DONE: Seçilen eksen veya eksenlerin hareket kabul edip etmediğini kontrol eder.
 bool can_accept_motion_for_axis(ace::communication::AxisId axis, const AxisStatus& pan, const AxisStatus& tilt)
 {
@@ -97,6 +63,41 @@ bool can_accept_motion_for_axis(ace::communication::AxisId axis, const AxisStatu
     }
 
     return false;
+}
+
+bool is_motion_state_active(AxisState state)
+{
+    return state == AxisState::position
+        || state == AxisState::velocity
+        || state == AxisState::tracking
+        || state == AxisState::homing
+        || state == AxisState::calibration;
+}
+
+bool is_event_complete(ace::communication::AxisId axis, const AxisStatus& pan, const AxisStatus& tilt)
+{
+    if (axis == ace::communication::AxisId::PAN) {
+        return !is_motion_state_active(pan.state);
+    }
+
+    if (axis == ace::communication::AxisId::TILT) {
+        return !is_motion_state_active(tilt.state);
+    }
+
+    if (axis == ace::communication::AxisId::ALL) {
+        return !is_motion_state_active(pan.state) && !is_motion_state_active(tilt.state);
+    }
+
+    return false;
+}
+
+ace::communication::EventTypeId event_type_for_command(ace::communication::CommandId command_id)
+{
+    if (command_id == ace::communication::CommandId::SET_TARGET) {
+        return ace::communication::EventTypeId::TARGET_REACHED;
+    }
+
+    return ace::communication::EventTypeId::MOTION_DONE;
 }
 
 bool is_valid_axis_selection(ace::communication::AxisId axis)
@@ -282,6 +283,11 @@ void AxisManager::bind_persistent_state(ace::config::IPersistentStorage* storage
     tilt_controller_.set_gains(c.tilt_pid.kp, c.tilt_pid.ki, c.tilt_pid.kd, c.tilt_pid.feed_forward);
 }
 
+void AxisManager::bind_safety_manager(ace::safety::SafetyManager* safety_manager)
+{
+    safety_manager_ = safety_manager;
+}
+
 void AxisManager::log_debug(const char* area, const char* message) const
 {
     if (logger_ == nullptr) {
@@ -330,6 +336,7 @@ void AxisManager::disable(ace::communication::AxisId axis)
 
     pending_event_.reset();
     pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
+    pending_event_axis_ = ace::communication::AxisId::ALL;
     log_debug("axis.disable", "Eksen veya eksenler disable edildi.");
 }
 
@@ -388,15 +395,19 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         if (!is_valid_angle_request(config, request.axis, request.pan_angle_deg, request.tilt_angle_deg)) {
             // Hard limit ihlali → Fault raporla
             if (!is_within_range(request.pan_angle_deg, ace::config::device::kPanHardMinDeg, ace::config::device::kPanHardMaxDeg)) {
-                safety_manager_.report_fault(ace::safety::FaultCode::AXIS_PAN_OVERRUN);
+                if (safety_manager_ != nullptr) {
+                    safety_manager_->report_fault(ace::safety::FaultCode::AXIS_PAN_OVERRUN);
+                }
             }
             if (!is_within_range(request.tilt_angle_deg, ace::config::device::kTiltHardMinDeg, ace::config::device::kTiltHardMaxDeg)) {
-                safety_manager_.report_fault(ace::safety::FaultCode::AXIS_TILT_OVERRUN);
+                if (safety_manager_ != nullptr) {
+                    safety_manager_->report_fault(ace::safety::FaultCode::AXIS_TILT_OVERRUN);
+                }
             }
             make_limit_nack();
             return outcome;
         }
-        if (pending_event_) {
+        if (pending_event_ || pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
             make_busy_nack();
             return outcome;
         }
@@ -410,6 +421,7 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         }
         set_angle(request.axis, request.pan_angle_deg, request.tilt_angle_deg);
         pending_event_command_id_ = request.command_id;
+        pending_event_axis_ = request.axis;
         outcome.ack = ace::communication::AckResponse{request.command_id};
         log_debug("axis.execute", "SET_ANGLE komutu işlendi.");
         return outcome;
@@ -422,7 +434,7 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             make_limit_nack();
             return outcome;
         }
-        if (pending_event_) {
+        if (pending_event_ || pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
             make_busy_nack();
             return outcome;
         }
@@ -452,7 +464,7 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             make_invalid_parameter_nack();
             return outcome;
         }
-        if (pending_event_) {
+        if (pending_event_ || pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
             make_busy_nack();
             return outcome;
         }
@@ -462,16 +474,18 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         }
         home(request.axis);
         pending_event_command_id_ = request.command_id;
+        pending_event_axis_ = request.axis;
         outcome.ack = ace::communication::AckResponse{request.command_id};
         log_debug("axis.execute", "HOME komutu işlendi.");
         return outcome;
     case ace::communication::CommandId::CALIBRATE:
-        if (pending_event_) {
+        if (pending_event_ || pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
             make_busy_nack();
             return outcome;
         }
         calibrate();
         pending_event_command_id_ = request.command_id;
+        pending_event_axis_ = ace::communication::AxisId::ALL;
         outcome.ack = ace::communication::AckResponse{request.command_id};
         log_debug("axis.execute", "CALIBRATE komutu işlendi.");
         return outcome;
@@ -579,11 +593,18 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             make_limit_nack();
             return outcome;
         }
-        if (pending_event_) {
+        if (pending_event_ || pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
             make_busy_nack();
             return outcome;
         }
         set_target(request.longitude_deg, request.latitude_deg, request.altitude_m);
+        if (mode_ == ace::communication::ModeId::TRACK) {
+            pending_event_command_id_ = request.command_id;
+            pending_event_axis_ = ace::communication::AxisId::ALL;
+        } else {
+            pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
+            pending_event_axis_ = ace::communication::AxisId::ALL;
+        }
         outcome.ack = ace::communication::AckResponse{request.command_id};
         log_debug("axis.execute", "SET_TARGET komutu işlendi.");
         return outcome;
@@ -615,6 +636,7 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         target_altitude_m_ = 0.0;
         pending_event_.reset();
         pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
+        pending_event_axis_ = ace::communication::AxisId::ALL;
         outcome.ack = ace::communication::AckResponse{request.command_id};
         log_debug("axis.execute", "FACTORY_RESET komutu işlendi. Seri numara korundu.");
         return outcome;
@@ -696,9 +718,14 @@ void AxisManager::set_velocity(ace::communication::AxisId axis, float pan_dps, f
 void AxisManager::stop(ace::communication::StopTypeId stop_type)
 {
     if (stop_type == ace::communication::StopTypeId::EMERGENCY) {
-        safety_manager_.report_fault(ace::safety::FaultCode::EMERGENCY_STOP);
+        if (safety_manager_ != nullptr) {
+            safety_manager_->report_fault(ace::safety::FaultCode::EMERGENCY_STOP);
+        }
         pan_.faulted = true;
         tilt_.faulted = true;
+        pending_event_.reset();
+        pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
+        pending_event_axis_ = ace::communication::AxisId::ALL;
         log_debug("axis.stop", "EMERGENCY_STOP tetiklendi.");
     } else {
         pan_.target_velocity_dps = 0.0f;
@@ -709,6 +736,7 @@ void AxisManager::stop(ace::communication::StopTypeId stop_type)
         tilt_.state = tilt_.enabled ? AxisState::ready : AxisState::disabled;
         pending_event_.reset();
         pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
+        pending_event_axis_ = ace::communication::AxisId::ALL;
         log_debug("axis.stop", "Hareket durduruldu.");
     }
 }
@@ -746,12 +774,17 @@ void AxisManager::set_mode(ace::communication::ModeId mode)
     if (mode == ace::communication::ModeId::TRACK) {
         pan_.state = AxisState::tracking;
         tilt_.state = AxisState::tracking;
-        
+
         float pan_tgt = 0.0f;
         float tilt_tgt = 0.0f;
-        calculate_target_angles(location_latitude_deg_, location_longitude_deg_, location_altitude_m_,
-                                target_latitude_deg_, target_longitude_deg_, target_altitude_m_,
-                                pan_tgt, tilt_tgt);
+        ace::geometry::calculate_target_angles(location_latitude_deg_,
+                                               location_longitude_deg_,
+                                               location_altitude_m_,
+                                               target_latitude_deg_,
+                                               target_longitude_deg_,
+                                               target_altitude_m_,
+                                               pan_tgt,
+                                               tilt_tgt);
         set_angle(ace::communication::AxisId::ALL, pan_tgt, tilt_tgt);
     } else {
         if (pan_.state == AxisState::tracking) {
@@ -814,9 +847,14 @@ void AxisManager::set_target(double longitude_deg, double latitude_deg, double a
     if (mode_ == ace::communication::ModeId::TRACK) {
         float pan_tgt = 0.0f;
         float tilt_tgt = 0.0f;
-        calculate_target_angles(location_latitude_deg_, location_longitude_deg_, location_altitude_m_,
-                                target_latitude_deg_, target_longitude_deg_, target_altitude_m_,
-                                pan_tgt, tilt_tgt);
+        ace::geometry::calculate_target_angles(location_latitude_deg_,
+                                               location_longitude_deg_,
+                                               location_altitude_m_,
+                                               target_latitude_deg_,
+                                               target_longitude_deg_,
+                                               target_altitude_m_,
+                                               pan_tgt,
+                                               tilt_tgt);
         set_angle(ace::communication::AxisId::ALL, pan_tgt, tilt_tgt);
     }
 
@@ -835,14 +873,14 @@ void AxisManager::update(float dt_s, const SensorData& sensors)
     // Haberleşme koptu mu kontrolü (Watchdog)
     communication_timeout_timer_s_ += dt_s;
     if (communication_timeout_timer_s_ > ace::config::device::kCommunicationTimeoutS) {
-        if (!safety_manager_.has_fault(ace::safety::FaultCode::COMMAND_TIMEOUT)) {
-            safety_manager_.report_fault(ace::safety::FaultCode::COMMAND_TIMEOUT);
+        if (safety_manager_ != nullptr && !safety_manager_->has_fault(ace::safety::FaultCode::COMMAND_TIMEOUT)) {
+            safety_manager_->report_fault(ace::safety::FaultCode::COMMAND_TIMEOUT);
             stop(ace::communication::StopTypeId::SOFT);
             log_debug("axis.update", "Haberleşme koptu! Motorlar SOFT-STOP ile durduruldu.");
         }
     } else {
-        if (safety_manager_.has_fault(ace::safety::FaultCode::COMMAND_TIMEOUT)) {
-            safety_manager_.clear_fault(ace::safety::FaultCode::COMMAND_TIMEOUT);
+        if (safety_manager_ != nullptr && safety_manager_->has_fault(ace::safety::FaultCode::COMMAND_TIMEOUT)) {
+            safety_manager_->clear_fault(ace::safety::FaultCode::COMMAND_TIMEOUT);
             log_debug("axis.update", "Haberleşme geri geldi.");
         }
     }
@@ -882,11 +920,6 @@ void AxisManager::update(float dt_s, const SensorData& sensors)
         // Hedefe yeterince yaklaştı mi kontrolü
         if (std::fabs(pan_.current_position_deg - pan_.target_position_deg) < 0.5f) {
             pan_.state = AxisState::ready;
-            if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
-                pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,
-                                                                  pending_event_command_id_};
-                pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
-            }
         }
     }
 
@@ -898,11 +931,6 @@ void AxisManager::update(float dt_s, const SensorData& sensors)
 
         if (std::fabs(tilt_.current_position_deg - tilt_.target_position_deg) < 0.5f) {
             tilt_.state = AxisState::ready;
-            if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
-                pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,
-                                                                  pending_event_command_id_};
-                pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
-            }
         }
     }
 
@@ -929,11 +957,6 @@ void AxisManager::update(float dt_s, const SensorData& sensors)
         pan_.current_velocity_dps = 0.0f;
         pan_.target_velocity_dps  = 0.0f;
         pan_.state = AxisState::ready;
-        if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
-            pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,
-                                                              pending_event_command_id_};
-            pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
-        }
     }
 
     if (tilt_.state == AxisState::homing) {
@@ -949,29 +972,24 @@ void AxisManager::update(float dt_s, const SensorData& sensors)
         tilt_.current_velocity_dps = 0.0f;
         tilt_.target_velocity_dps  = 0.0f;
         tilt_.state = AxisState::ready;
-        if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
-            pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,
-                                                              pending_event_command_id_};
-            pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
-        }
     }
 
     if (pan_.state == AxisState::calibration) {
         pan_.state = AxisState::ready;
-        if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
-            pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,
-                                                              pending_event_command_id_};
-            pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
-        }
     }
 
     if (tilt_.state == AxisState::calibration) {
         tilt_.state = AxisState::ready;
-        if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
-            pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,
-                                                              pending_event_command_id_};
-            pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
-        }
+    }
+
+    if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN &&
+        is_event_complete(pending_event_axis_, pan_, tilt_)) {
+        pending_event_ = ace::communication::EventMessage{
+            event_type_for_command(pending_event_command_id_),
+            pending_event_command_id_
+        };
+        pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
+        pending_event_axis_ = ace::communication::AxisId::ALL;
     }
 }
 

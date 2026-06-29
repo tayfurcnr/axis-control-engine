@@ -3,7 +3,7 @@
 #include <cstddef>
 
 #include "esp_err.h"
-#include "nvs.h"
+#include "nvs_flash.h"
 
 namespace ace::config {
 

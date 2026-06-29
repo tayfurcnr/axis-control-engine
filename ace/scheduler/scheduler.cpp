@@ -101,22 +101,23 @@ void Scheduler::telemetry_task(void* arg)
 // SUMMARY: DONE: Güvenlik aktifse eksenleri devre dışı bırakır, aksi halde 1ms AxisManager::update döngüsünü çalıştırır.
 void Scheduler::run_control_loop()
 {
-    if (safety_.safe_state_active()) {
+    if (safety_.is_safe_state_active()) {
         axis_manager_.disable(ace::communication::AxisId::ALL);
         return;
     }
 
-    axis_manager_.update(0.001f); // 1 ms period
+    ace::axis::SensorData sensors {};
+    axis_manager_.update(0.001f, sensors); // 1 ms period
 }
 
-// SUMMARY: TODO: ALP ayrıştırıcının 500Hz döngüsünde yazılımsal ön çalışma sırasını işler; ALP entegrasyonu sonra bağlanacak.
+// SUMMARY: TODO: ALP parser'dan gelen komutlar 500 Hz arka planında önceliklendirilecek; gerçek parse/dispatch akışı sonra bağlanacak.
 void Scheduler::run_planner_loop()
 {
     // Placeholder for the 500 Hz trajectory planner.
     (void)alp_parser_;
 }
 
-// SUMMARY: TODO: Gelen ALP komutunu parse edecek ve dispatch edecek; ALP entegrasyonu sonra bağlanacak.
+// SUMMARY: TODO: ALP parser ve dispatcher bu döngüde bağlanacak; şimdilik event tüketimi ve debug izleme yapılıyor.
 void Scheduler::run_communication_loop()
 {
     // Placeholder for the 100 Hz receive and dispatch path.

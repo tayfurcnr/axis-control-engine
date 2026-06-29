@@ -37,7 +37,9 @@ extern "C" void app_main(void)
     ace::config::PersistentConfig persistent_config {};
     if (persistent_storage.load(persistent_config) != ace::config::StorageResult::ok) {
         logger.debug("config", "Persistent config yüklenemedi, varsayılan değerler uygulanıyor.");
-        persistent_storage.save(persistent_config);
+        if (persistent_storage.save(persistent_config) != ace::config::StorageResult::ok) {
+            logger.debug("config", "Persistent config varsayılanları kaydedilemedi.");
+        }
     } else {
         logger.debug("config", "Persistent config başarıyla yüklendi.");
     }
@@ -52,6 +54,7 @@ extern "C" void app_main(void)
 
     ace::axis::AxisManager axis_manager(&logger);
     axis_manager.bind_persistent_state(&persistent_storage, &persistent_config);
+    axis_manager.bind_safety_manager(&safety);
     ace::communication::AlpParser alp_parser;
     ace::protocol::ProtocolDispatcher dispatcher;
     ace::telemetry::TelemetryPublisher telemetry;

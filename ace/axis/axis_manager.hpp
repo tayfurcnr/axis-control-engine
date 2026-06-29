@@ -52,6 +52,7 @@ public:
     explicit AxisManager(ace::services::Logger* logger = nullptr);
 
     void bind_persistent_state(ace::config::IPersistentStorage* storage, ace::config::PersistentConfig* config);
+    void bind_safety_manager(ace::safety::SafetyManager* safety_manager);
 
     void enable(ace::communication::AxisId axis);
     void disable(ace::communication::AxisId axis);
@@ -63,11 +64,11 @@ public:
     void home(ace::communication::AxisId axis);
     void calibrate();
     void set_mode(ace::communication::ModeId mode);
-    // TODO: Konum bilgisi, gerçek geodetik referans ve sensör kaynaklarıyla birlikte değerlendirilecek.
+    // SUMMARY: Cihazın kurulu olduğu coğrafi konumu kalıcı kayıt ve runtime state ile senkronlar.
     [[nodiscard]] ace::config::StorageResult set_location(double longitude_deg, double latitude_deg, double altitude_m);
-    // TODO: Kalıcı kayda dokunmadan, yüklenen konumu sadece runtime state'e uygular.
+    // SUMMARY: Kalıcı kayda yazmadan, daha önce yüklenmiş konumu runtime state'e uygular.
     void restore_location(double longitude_deg, double latitude_deg, double altitude_m);
-    // TODO: Hedefe yönelim hesabı, cihaz konumu ve hedef koordinatlar kullanılarak ayrı bir geometri katmanına taşınacak.
+    // SUMMARY: Cihaz konumuna göre hedef pan/tilt açısını geometri katmanıyla hesaplar.
     void set_target(double longitude_deg, double latitude_deg, double altitude_m);
     void update(float dt_s, const SensorData& sensors);
 
@@ -84,8 +85,10 @@ private:
     ace::services::Logger* logger_ = nullptr;
     ace::config::IPersistentStorage* persistent_storage_ = nullptr;
     ace::config::PersistentConfig* persistent_config_ = nullptr;
+    ace::safety::SafetyManager* safety_manager_ = nullptr;
     std::optional<ace::communication::EventMessage> pending_event_ {};
     ace::communication::CommandId pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
+    ace::communication::AxisId pending_event_axis_ = ace::communication::AxisId::ALL;
     double location_longitude_deg_ = 0.0;
     double location_latitude_deg_ = 0.0;
     double location_altitude_m_ = 0.0;
@@ -98,10 +101,9 @@ private:
     ace::control::Controller pan_controller_;
     ace::motion::MotionPlanner tilt_planner_;
     ace::control::Controller tilt_controller_;
-    
+
     ace::control::ComplementaryFilter pan_fusion_;
     ace::control::ComplementaryFilter tilt_fusion_;
-    ace::safety::SafetyManager safety_manager_;
 };
 
 }  // namespace ace::axis

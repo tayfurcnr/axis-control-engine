@@ -186,6 +186,14 @@ ace::communication::ErrorCode make_busy_error()
                                            ace::communication::ErrorSeverityId::WARNING);
 }
 
+ace::communication::ErrorCode make_invalid_state_error()
+{
+    return ace::communication::make_error(ace::communication::ErrorGroupId::COMMUNICATION,
+                                           ace::communication::ErrorModuleId::SYSTEM,
+                                           ace::communication::ErrorReasonId::INVALID_STATE,
+                                           ace::communication::ErrorSeverityId::ERROR);
+}
+
 ace::communication::ErrorCode make_storage_not_initialized_error()
 {
     return ace::communication::make_error(ace::communication::ErrorGroupId::STORAGE,
@@ -396,6 +404,15 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         outcome.nack = ace::communication::NackResponse{request.command_id, make_busy_error()};
     };
 
+    if (safety_manager_ != nullptr && safety_manager_->is_safe_state_active()) {
+        if (request.command_id != ace::communication::CommandId::REBOOT &&
+            request.command_id != ace::communication::CommandId::FACTORY_RESET) {
+            outcome.nack = ace::communication::NackResponse{request.command_id, make_invalid_state_error()};
+            log_debug("axis.execute", "Safe state aktif olduğu için komut reddedildi.");
+            return outcome;
+        }
+    }
+
     if (!can_execute_in_mode(request.command_id, mode_)) {
         make_busy_nack(); // NACK (Mode Not Allowed)
         log_debug("axis.execute", "Capability Matrix Uyarısı: Bu modda bu komuta izin verilmiyor.");
@@ -578,9 +595,10 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             make_invalid_parameter_nack();
             return outcome;
         }
-        if (request.mode == ace::communication::ModeId::TRACK && !has_configured_location(persistent_config_)) {
-            make_invalid_parameter_nack();
-            log_debug("axis.execute", "TRACK modu için cihaz konumu tanımlı değil.");
+        if (request.mode == ace::communication::ModeId::TRACK &&
+            (!has_configured_location(persistent_config_) || !target_configured_)) {
+            outcome.nack = ace::communication::NackResponse{request.command_id, make_invalid_state_error()};
+            log_debug("axis.execute", "TRACK modu için konum veya hedef tanımlı değil.");
             return outcome;
         }
         set_mode(request.mode);
@@ -632,6 +650,11 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             make_limit_nack();
             return outcome;
         }
+        if (mode_ == ace::communication::ModeId::TRACK && !has_configured_location(persistent_config_)) {
+            outcome.nack = ace::communication::NackResponse{request.command_id, make_invalid_state_error()};
+            log_debug("axis.execute", "TRACK modunda hedef için cihaz konumu tanımlı değil.");
+            return outcome;
+        }
         if (pending_event_ || pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
             make_busy_nack();
             return outcome;
@@ -673,6 +696,7 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         target_longitude_deg_ = 0.0;
         target_latitude_deg_ = 0.0;
         target_altitude_m_ = 0.0;
+        target_configured_ = false;
         pending_event_.reset();
         pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
         pending_event_axis_ = ace::communication::AxisId::ALL;
@@ -794,8 +818,9 @@ void AxisManager::calibrate()
 // SUMMARY: DONE: Çalışma modunu günceller ve TRACK modundayken coğrafi izlemeyi (geospacing tracking) başlatır.
 void AxisManager::set_mode(ace::communication::ModeId mode)
 {
-    if (mode == ace::communication::ModeId::TRACK && !has_configured_location(persistent_config_)) {
-        log_debug("axis.mode", "TRACK modu reddedildi: cihaz konumu tanımlı değil.");
+    if (mode == ace::communication::ModeId::TRACK &&
+        (!has_configured_location(persistent_config_) || !target_configured_)) {
+        log_debug("axis.mode", "TRACK modu reddedildi: cihaz konumu veya hedef tanımlı değil.");
         return;
     }
 
@@ -872,6 +897,7 @@ void AxisManager::set_target(double longitude_deg, double latitude_deg, double a
     target_longitude_deg_ = longitude_deg;
     target_latitude_deg_ = latitude_deg;
     target_altitude_m_ = altitude_m;
+    target_configured_ = true;
 
     if (mode_ == ace::communication::ModeId::TRACK) {
         if (!has_configured_location(persistent_config_)) {

@@ -97,6 +97,7 @@ private:
     double target_longitude_deg_ = 0.0;
     double target_latitude_deg_ = 0.0;
     double target_altitude_m_ = 0.0;
+    bool target_configured_ = false;
     float communication_timeout_timer_s_ = 0.0f;
 
     ace::motion::MotionPlanner pan_planner_;

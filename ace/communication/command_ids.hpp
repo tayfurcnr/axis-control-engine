@@ -86,6 +86,7 @@ enum class ErrorReasonId : std::uint8_t {
     WRITE_FAIL = 0x09,
     VERSION_MISMATCH = 0x0A,
     UNSUPPORTED = 0x0B,
+    INVALID_STATE = 0x0C,
 };
 
 enum class ErrorSeverityId : std::uint8_t {

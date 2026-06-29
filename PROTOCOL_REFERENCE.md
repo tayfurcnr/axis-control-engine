@@ -603,6 +603,7 @@ ERROR_CODE = <GROUP_ID><MODULE_ID><REASON_ID><SEVERITY_ID>
 | Pattern | Meaning |
 | --- | --- |
 | `COMMUNICATION / SYSTEM / INVALID_PARAMETER / ERROR` | Komut veya parametre formatı geçersiz |
+| `COMMUNICATION / SYSTEM / INVALID_STATE / ERROR` | Komut sistemin mevcut durumuyla uyumsuz |
 | `COMMUNICATION / SYSTEM / LIMIT / ERROR` | Girilen değer sınır dışında |
 | `MOTION / SYSTEM / BUSY / WARNING` | Sistem geçici olarak meşgul |
 | `MOTION / SYSTEM / TIMEOUT / ERROR` | Hareket beklenen sürede tamamlanmadı |
@@ -653,6 +654,7 @@ ERROR_CODE = <GROUP_ID><MODULE_ID><REASON_ID><SEVERITY_ID>
 | `WRITE_FAIL` | `0x09` |
 | `VERSION_MISMATCH` | `0x0A` |
 | `UNSUPPORTED` | `0x0B` |
+| `INVALID_STATE` | `0x0C` |
 
 ##### Severity IDs
 

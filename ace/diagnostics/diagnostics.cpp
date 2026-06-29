@@ -20,11 +20,14 @@ bool Diagnostics::run_self_test() const
     const std::size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
     const std::size_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 
-    std::printf("Diagnostics: free_heap=%u largest_block=%u\n",
-                static_cast<unsigned>(free_heap),
-                static_cast<unsigned>(largest_block));
+    const bool ok = free_heap >= kMinFreeHeapBytes && largest_block >= kMinLargestBlockBytes;
+    if (!ok) {
+        std::printf("Diagnostics FAILED: free_heap=%u largest_block=%u\n",
+                    static_cast<unsigned>(free_heap),
+                    static_cast<unsigned>(largest_block));
+    }
 
-    return free_heap >= kMinFreeHeapBytes && largest_block >= kMinLargestBlockBytes;
+    return ok;
 }
 
 }  // namespace ace::diagnostics

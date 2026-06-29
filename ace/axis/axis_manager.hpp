@@ -78,6 +78,8 @@ public:
 
 private:
     void log_debug(const char* area, const char* message) const;
+    void reset_motion_state();
+    void apply_emergency_stop();
 
     AxisStatus pan_;
     AxisStatus tilt_;

@@ -121,6 +121,11 @@ bool is_valid_stop_type(ace::communication::StopTypeId stop_type)
         || stop_type == ace::communication::StopTypeId::EMERGENCY;
 }
 
+bool has_configured_location(const ace::config::PersistentConfig* config)
+{
+    return config != nullptr && config->has_location;
+}
+
 bool is_within_range(double value, double min_value, double max_value)
 {
     return value >= min_value && value <= max_value;
@@ -295,6 +300,35 @@ void AxisManager::log_debug(const char* area, const char* message) const
     }
 
     logger_->debug(area, message);
+}
+
+void AxisManager::reset_motion_state()
+{
+    pan_.target_velocity_dps = 0.0f;
+    tilt_.target_velocity_dps = 0.0f;
+    pan_.current_velocity_dps = 0.0f;
+    tilt_.current_velocity_dps = 0.0f;
+    pan_.state = pan_.enabled ? AxisState::ready : AxisState::disabled;
+    tilt_.state = tilt_.enabled ? AxisState::ready : AxisState::disabled;
+    pending_event_.reset();
+    pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
+    pending_event_axis_ = ace::communication::AxisId::ALL;
+}
+
+void AxisManager::apply_emergency_stop()
+{
+    if (safety_manager_ != nullptr) {
+        safety_manager_->report_fault(ace::safety::FaultCode::EMERGENCY_STOP);
+    }
+
+    pan_.faulted = true;
+    tilt_.faulted = true;
+    pan_.enabled = false;
+    tilt_.enabled = false;
+    reset_motion_state();
+    pan_.state = AxisState::fault;
+    tilt_.state = AxisState::fault;
+    log_debug("axis.stop", "EMERGENCY_STOP tetiklendi.");
 }
 
 // SUMMARY: DONE: Tekil ekseni veya tüm eksenleri çalışmaya hazır hale getirir.
@@ -544,6 +578,11 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             make_invalid_parameter_nack();
             return outcome;
         }
+        if (request.mode == ace::communication::ModeId::TRACK && !has_configured_location(persistent_config_)) {
+            make_invalid_parameter_nack();
+            log_debug("axis.execute", "TRACK modu için cihaz konumu tanımlı değil.");
+            return outcome;
+        }
         set_mode(request.mode);
         outcome.ack = ace::communication::AckResponse{request.command_id};
         log_debug("axis.execute", "SET_MODE komutu işlendi.");
@@ -718,27 +757,12 @@ void AxisManager::set_velocity(ace::communication::AxisId axis, float pan_dps, f
 void AxisManager::stop(ace::communication::StopTypeId stop_type)
 {
     if (stop_type == ace::communication::StopTypeId::EMERGENCY) {
-        if (safety_manager_ != nullptr) {
-            safety_manager_->report_fault(ace::safety::FaultCode::EMERGENCY_STOP);
-        }
-        pan_.faulted = true;
-        tilt_.faulted = true;
-        pending_event_.reset();
-        pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
-        pending_event_axis_ = ace::communication::AxisId::ALL;
-        log_debug("axis.stop", "EMERGENCY_STOP tetiklendi.");
-    } else {
-        pan_.target_velocity_dps = 0.0f;
-        tilt_.target_velocity_dps = 0.0f;
-        pan_.current_velocity_dps = 0.0f;
-        tilt_.current_velocity_dps = 0.0f;
-        pan_.state = pan_.enabled ? AxisState::ready : AxisState::disabled;
-        tilt_.state = tilt_.enabled ? AxisState::ready : AxisState::disabled;
-        pending_event_.reset();
-        pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
-        pending_event_axis_ = ace::communication::AxisId::ALL;
-        log_debug("axis.stop", "Hareket durduruldu.");
+        apply_emergency_stop();
+        return;
     }
+
+    reset_motion_state();
+    log_debug("axis.stop", "Hareket durduruldu.");
 }
 
 // SUMMARY: DONE: Seçilen eksen için referans/homing sürecini yazılımsal olarak başlatır (Sensör okumaları HAL katmanı bekleniyor).
@@ -770,6 +794,11 @@ void AxisManager::calibrate()
 // SUMMARY: DONE: Çalışma modunu günceller ve TRACK modundayken coğrafi izlemeyi (geospacing tracking) başlatır.
 void AxisManager::set_mode(ace::communication::ModeId mode)
 {
+    if (mode == ace::communication::ModeId::TRACK && !has_configured_location(persistent_config_)) {
+        log_debug("axis.mode", "TRACK modu reddedildi: cihaz konumu tanımlı değil.");
+        return;
+    }
+
     mode_ = mode;
     if (mode == ace::communication::ModeId::TRACK) {
         pan_.state = AxisState::tracking;
@@ -845,6 +874,11 @@ void AxisManager::set_target(double longitude_deg, double latitude_deg, double a
     target_altitude_m_ = altitude_m;
 
     if (mode_ == ace::communication::ModeId::TRACK) {
+        if (!has_configured_location(persistent_config_)) {
+            log_debug("axis.target", "Hedef hesaplanamadı: cihaz konumu tanımlı değil.");
+            return;
+        }
+
         float pan_tgt = 0.0f;
         float tilt_tgt = 0.0f;
         ace::geometry::calculate_target_angles(location_latitude_deg_,

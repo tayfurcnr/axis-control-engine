@@ -1,5 +1,7 @@
 # Axis Control Engine (ACE)
 
+![ACE Logo](docs/logo.png)
+
 **ACE**, pan-tilt ekseni kontrol sistemleri için geliştirilmiş, platform bağımsız, gömülü C++ altyapısıdır. Hedef platform ESP32-S3 olmakla birlikte, kontrol algoritmaları ve mantık katmanı donanımdan tamamen yalıtılmıştır.
 
 ---

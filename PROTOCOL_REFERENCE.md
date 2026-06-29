@@ -234,7 +234,8 @@ Kullanıcının seçtiği aktif operasyonel mod (`ModeId`), sistemin dışarıda
 | --- | --- | --- | --- |
 | `SET_ANGLE` | Evet | Yalnızca `MANUAL` | İstenilen doğrudan açıya gider. `TRACK`/`AUTO`'da `NACK` döner. |
 | `SET_VELOCITY` | Evet | Yalnızca `MANUAL` | İstenilen doğrudan hızda döner. `TRACK`/`AUTO`'da `NACK` döner. |
-| `SET_TARGET` | Hayır | `TRACK`, `AUTO` | Yalnızca hedefe bağlı modlarda coğrafi hedefler kabul edilir. |
+| `SET_TARGET` | Hayır | `TRACK`, `AUTO` | `AUTO` modunda hedef saklanır, `TRACK` modunda hedef saklanır ve geometri hesabı ile yönlendirme başlar. `MANUAL` modda `NACK` döner. |
+| `SET_MODE` | Hayır | Tümü | `TRACK` seçilmeden önce cihaz konumu tanımlı olmalıdır; aksi durumda `NACK <CMD_ID> 0x03000403` döner. |
 | `CALIBRATE`, `HOME` | İhtiyari | (Tümü) | Gelişmiş güvenlikte sadece MANUAL'e kilitlenebilir, şimdilik serbesttir. |
 | `ENABLE`, `STOP`, `SET_PID` vb. | Hayır | Tümü | Sistem yönetimi ve acil durum komutları HER modda daima çalışır. |
 
@@ -361,6 +362,7 @@ SET_MODE <MODE>
 - `MANUAL`: eksenler doğrudan açı/hız komutlarıyla yönetilir
 - `AUTO`: iç kontrol ve planlama mantığı aktif olur
 - `TRACK`: `SET_TARGET` üzerinden hedef takibi yapar
+- `TRACK` seçimi için cihaz konumu önceden `SET_LOCATION` ile tanımlanmış olmalıdır
 - Geçersiz `MODE` için `NACK <CMD_ID> 0x03000403` döner
 
 Örnek:
@@ -460,7 +462,8 @@ SET_TARGET <TARGET_LONGITUDE> <TARGET_LATITUDE> <TARGET_ALTITUDE_M>
 - `TARGET_LONGITUDE`: hedef noktanın boylamı, derece cinsinden
 - `TARGET_LATITUDE`: hedef noktanın enlemi, derece cinsinden
 - `TARGET_ALTITUDE_M`: hedef noktanın deniz seviyesine göre yüksekliği, metre cinsinden
-- Cihaz bu bilgiyi kullanarak hedefe bakacak pan ve tilt açılarını hesaplar
+- `AUTO` modunda hedef saklanır; `TRACK` modunda hedef saklanır ve cihazın bakacağı pan ve tilt açıları hesaplanır
+- `MANUAL` modda bu komut kabul edilmez ve `NACK` döner
 - `TARGET_LONGITUDE` ve `TARGET_LATITUDE` değerleri `double` hassasiyetinde gönderilmelidir
 - `TARGET_LONGITUDE` ve `TARGET_LATITUDE` için nokta sonrası en az 7 hane önerilir
 - `TARGET_LONGITUDE`, `TARGET_LATITUDE` veya `TARGET_ALTITUDE_M` sınır dışı ise `NACK <CMD_ID> 0x03000203` döner

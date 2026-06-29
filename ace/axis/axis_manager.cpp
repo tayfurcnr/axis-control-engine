@@ -382,6 +382,13 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
             return outcome;
         }
         if (!is_valid_angle_request(config, request.axis, request.pan_angle_deg, request.tilt_angle_deg)) {
+            // Hard limit ihlali → Fault raporla
+            if (!is_within_range(request.pan_angle_deg, ace::config::device::kPanHardMinDeg, ace::config::device::kPanHardMaxDeg)) {
+                safety_manager_.report_fault(ace::safety::FaultCode::AXIS_PAN_OVERRUN);
+            }
+            if (!is_within_range(request.tilt_angle_deg, ace::config::device::kTiltHardMinDeg, ace::config::device::kTiltHardMaxDeg)) {
+                safety_manager_.report_fault(ace::safety::FaultCode::AXIS_TILT_OVERRUN);
+            }
             make_limit_nack();
             return outcome;
         }
@@ -606,6 +613,13 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
         outcome.ack = ace::communication::AckResponse{request.command_id};
         log_debug("axis.execute", "FACTORY_RESET komutu işlendi. Seri numara korundu.");
+        return outcome;
+    case ace::communication::CommandId::EMERGENCY_STOP:
+        safety_manager_.report_fault(ace::safety::FaultCode::EMERGENCY_STOP);
+        pan_.faulted  = true;
+        tilt_.faulted = true;
+        outcome.ack = ace::communication::AckResponse{request.command_id};
+        log_debug("axis.execute", "EMERGENCY_STOP tetiklendi. Sistem güvenli beklemeye alındı.");
         return outcome;
     default:
         make_invalid_parameter_nack();

@@ -9,6 +9,7 @@
 #include "ace/config/persistent_storage_interface.hpp"
 #include "ace/services/logger.hpp"
 #include "ace/control/sensor_fusion.hpp"
+#include "ace/safety/safety_manager.hpp"
 
 namespace ace::axis {
 
@@ -99,6 +100,7 @@ private:
     
     ace::control::ComplementaryFilter pan_fusion_;
     ace::control::ComplementaryFilter tilt_fusion_;
+    ace::safety::SafetyManager safety_manager_;
 };
 
 }  // namespace ace::axis

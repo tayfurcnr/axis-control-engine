@@ -804,8 +804,8 @@ void AxisManager::set_target(double longitude_deg, double latitude_deg, double a
     log_debug("axis.target", "Hedef konumu güncellendi ve hesaplandı.");
 }
 
-// SUMMARY: DONE: Eksen durumlarını günceller, Planner(İvme) ve Controller(PID) kapalı döngülerini periyodik olarak çalıştırır.
-void AxisManager::update(float dt_s)
+// SUMMARY: DONE: Eksen durumlarını günceller. Sensör verisi (Pusula/İvme/Jiro) Complementary Filter aracılığıyla fuzion yapılır, ardından planner ve PID kapalı döngüsü çalıştırılır.
+void AxisManager::update(float dt_s, const SensorData& sensors)
 {
     if (pan_.faulted || tilt_.faulted) {
         pan_.state = AxisState::fault;
@@ -813,23 +813,33 @@ void AxisManager::update(float dt_s)
         return;
     }
 
+    // --- Sensör Füzyonu ---
+    // Pusula ve Jiro verilerini harmanla: Açık döngü sürüşte hız (rate) step
+    // komutlarından gelir. Pusula ise uzun vadeli kalibrasyonu/düzeltmeyi sağlar.
+    pan_.current_position_deg  = pan_fusion_.update(sensors.pan_rate_dps, sensors.compass_heading_deg, dt_s);
+    tilt_.current_position_deg = tilt_fusion_.update(sensors.tilt_rate_dps, sensors.accel_tilt_deg, dt_s);
+
     if (pan_.state == AxisState::boot) {
+        // İlk boot'ta Pusula ile pozisyon eşitlenir
+        pan_fusion_.reset(sensors.compass_heading_deg);
+        pan_.current_position_deg = sensors.compass_heading_deg;
         pan_.state = AxisState::ready;
     }
 
     if (tilt_.state == AxisState::boot) {
+        tilt_fusion_.reset(sensors.accel_tilt_deg);
+        tilt_.current_position_deg = sensors.accel_tilt_deg;
         tilt_.state = AxisState::ready;
     }
 
     if (pan_.state == AxisState::position) {
         auto p_state = pan_planner_.update(dt_s);
-        // İdeal dünyada encoder okuması ile doldurulmalı; test amaçlı doğrudan plannera bağlanmıştır.
-        pan_.current_position_deg = p_state.position_deg;
-        pan_.current_velocity_dps = p_state.velocity_dps;
+        
         float effort = pan_controller_.update(p_state.position_deg, pan_.current_position_deg, dt_s);
-        (void)effort;
+        (void)effort; // Sürücülere (HAL) iletilecek
 
-        if (pan_.current_position_deg == pan_.target_position_deg) {
+        // Hedefe yeterince yaklaştı mi kontrolü
+        if (std::fabs(pan_.current_position_deg - pan_.target_position_deg) < 0.5f) {
             pan_.state = AxisState::ready;
             if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
                 pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,
@@ -841,12 +851,11 @@ void AxisManager::update(float dt_s)
 
     if (tilt_.state == AxisState::position) {
         auto t_state = tilt_planner_.update(dt_s);
-        tilt_.current_position_deg = t_state.position_deg;
-        tilt_.current_velocity_dps = t_state.velocity_dps;
+
         float effort = tilt_controller_.update(t_state.position_deg, tilt_.current_position_deg, dt_s);
         (void)effort;
 
-        if (tilt_.current_position_deg == tilt_.target_position_deg) {
+        if (std::fabs(tilt_.current_position_deg - tilt_.target_position_deg) < 0.5f) {
             tilt_.state = AxisState::ready;
             if (!pending_event_ && pending_event_command_id_ != ace::communication::CommandId::UNKNOWN) {
                 pending_event_ = ace::communication::EventMessage{ace::communication::EventTypeId::MOTION_DONE,

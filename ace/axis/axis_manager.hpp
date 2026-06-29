@@ -8,8 +8,16 @@
 #include "ace/config/config.hpp"
 #include "ace/config/persistent_storage_interface.hpp"
 #include "ace/services/logger.hpp"
+#include "ace/control/sensor_fusion.hpp"
 
 namespace ace::axis {
+
+struct SensorData {
+    float pan_rate_dps = 0.0f;           // High freq velocity from Gyro or Stepper Pulses
+    float tilt_rate_dps = 0.0f;          // High freq velocity from Gyro or Stepper Pulses
+    float compass_heading_deg = 0.0f;    // Absolute Low Freq Pan reference
+    float accel_tilt_deg = 0.0f;         // Absolute Low Freq Tilt reference
+};
 
 // Logical runtime state only. No hardware handles live here.
 enum class AxisState : std::uint8_t {
@@ -57,7 +65,7 @@ public:
     void restore_location(double longitude_deg, double latitude_deg, double altitude_m);
     // TODO: Hedefe yönelim hesabı, cihaz konumu ve hedef koordinatlar kullanılarak ayrı bir geometri katmanına taşınacak.
     void set_target(double longitude_deg, double latitude_deg, double altitude_m);
-    void update(float dt_s);
+    void update(float dt_s, const SensorData& sensors);
 
     [[nodiscard]] AxisStatus pan_status() const;
     [[nodiscard]] AxisStatus tilt_status() const;
@@ -85,6 +93,9 @@ private:
     ace::control::Controller pan_controller_;
     ace::motion::MotionPlanner tilt_planner_;
     ace::control::Controller tilt_controller_;
+    
+    ace::control::ComplementaryFilter pan_fusion_;
+    ace::control::ComplementaryFilter tilt_fusion_;
 };
 
 }  // namespace ace::axis

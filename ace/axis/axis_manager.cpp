@@ -614,13 +614,6 @@ ace::communication::CommandOutcome AxisManager::execute(const ace::communication
         outcome.ack = ace::communication::AckResponse{request.command_id};
         log_debug("axis.execute", "FACTORY_RESET komutu işlendi. Seri numara korundu.");
         return outcome;
-    case ace::communication::CommandId::EMERGENCY_STOP:
-        safety_manager_.report_fault(ace::safety::FaultCode::EMERGENCY_STOP);
-        pan_.faulted  = true;
-        tilt_.faulted = true;
-        outcome.ack = ace::communication::AckResponse{request.command_id};
-        log_debug("axis.execute", "EMERGENCY_STOP tetiklendi. Sistem güvenli beklemeye alındı.");
-        return outcome;
     default:
         make_invalid_parameter_nack();
         log_debug("axis.execute", "Desteklenmeyen komut için NACK üretildi.");
@@ -698,16 +691,22 @@ void AxisManager::set_velocity(ace::communication::AxisId axis, float pan_dps, f
 // SUMMARY: DONE: Hareketi durdurur ve eksenleri güvenli bekleme durumuna geri alır; (Donanım acil stop fonksiyonu hariç tamamlandı).
 void AxisManager::stop(ace::communication::StopTypeId stop_type)
 {
-    (void)stop_type;
-    pan_.target_velocity_dps = 0.0f;
-    tilt_.target_velocity_dps = 0.0f;
-    pan_.current_velocity_dps = 0.0f;
-    tilt_.current_velocity_dps = 0.0f;
-    pan_.state = pan_.enabled ? AxisState::ready : AxisState::disabled;
-    tilt_.state = tilt_.enabled ? AxisState::ready : AxisState::disabled;
-    pending_event_.reset();
-    pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
-    log_debug("axis.stop", "Hareket durduruldu.");
+    if (stop_type == ace::communication::StopTypeId::EMERGENCY) {
+        safety_manager_.report_fault(ace::safety::FaultCode::EMERGENCY_STOP);
+        pan_.faulted = true;
+        tilt_.faulted = true;
+        log_debug("axis.stop", "EMERGENCY_STOP tetiklendi.");
+    } else {
+        pan_.target_velocity_dps = 0.0f;
+        tilt_.target_velocity_dps = 0.0f;
+        pan_.current_velocity_dps = 0.0f;
+        tilt_.current_velocity_dps = 0.0f;
+        pan_.state = pan_.enabled ? AxisState::ready : AxisState::disabled;
+        tilt_.state = tilt_.enabled ? AxisState::ready : AxisState::disabled;
+        pending_event_.reset();
+        pending_event_command_id_ = ace::communication::CommandId::UNKNOWN;
+        log_debug("axis.stop", "Hareket durduruldu.");
+    }
 }
 
 // SUMMARY: DONE: Seçilen eksen için referans/homing sürecini yazılımsal olarak başlatır (Sensör okumaları HAL katmanı bekleniyor).

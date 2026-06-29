@@ -27,7 +27,6 @@ enum class CommandId : std::uint8_t {
     GET_INFO = 0x80,
     REBOOT = 0x90,
     FACTORY_RESET = 0x91,
-    EMERGENCY_STOP = 0x92,
 };
 
 enum class AxisId : std::uint8_t {
